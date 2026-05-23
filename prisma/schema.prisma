@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model College {
+  id             Int      @id @default(autoincrement())
+  name           String
+  slug           String   @unique
+  description    String?
+  type           CollegeType
+  city           String
+  state          String
+  country        String   @default("India")
+  established    Int?
+  website        String?
+  imageUrl       String?
+  accreditation  String?
+  totalRating    Float    @default(0)
+  reviewCount    Int      @default(0)
+  minFees        Float    @default(0)
+  maxFees        Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  courses        Course[]
+  placements     Placement[]
+  reviews        Review[]
+  cutoffs        ExamCutoff[]
+  savedBy        SavedCollege[]
+
+  @@index([type])
+  @@index([state])
+  @@index([totalRating])
+  @@index([minFees])
+}
+
+enum CollegeType {
+  IIT
+  NIT
+  IIIT
+  DEEMED
+  PRIVATE
+  GOVERNMENT
+  CENTRAL
+}
+
+model Course {
+  id          Int        @id @default(autoincrement())
+  collegeId   Int
+  name        String
+  degreeType  DegreeType
+  duration    Int
+  fees        Float
+  seats       Int?
+  college     College    @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  cutoffs     ExamCutoff[]
+
+  @@index([collegeId])
+  @@index([degreeType])
+}
+
+enum DegreeType {
+  BTECH
+  MTECH
+  MBA
+  MBBS
+  PHD
+  BCA
+  MCA
+  BSC
+  MSC
+  BARCH
+  OTHER
+}
+
+model Placement {
+  id             Int     @id @default(autoincrement())
+  collegeId      Int
+  year           Int
+  avgPackage     Float
+  medianPackage  Float
+  highestPackage Float
+  placementRate  Float
+  topRecruiters  Json    @default("[]")
+  college        College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+
+  @@unique([collegeId, year])
+  @@index([collegeId])
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  collegeId Int
+  userId    Int
+  rating    Float
+  title     String
+  content   String
+  pros      String?
+  cons      String?
+  createdAt DateTime @default(now())
+  college   College  @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([collegeId])
+  @@index([userId])
+}
+
+model ExamCutoff {
+  id          Int      @id @default(autoincrement())
+  collegeId   Int
+  courseId    Int?
+  exam        ExamType
+  category    Category @default(GENERAL)
+  openingRank Int
+  closingRank Int
+  year        Int
+  college     College  @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  course      Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@index([collegeId])
+  @@index([exam, category, closingRank])
+}
+
+enum ExamType {
+  JEE_MAIN
+  JEE_ADVANCED
+  NEET
+  CAT
+  GATE
+  XAT
+  CLAT
+}
+
+enum Category {
+  GENERAL
+  OBC
+  SC
+  ST
+  EWS
+}
+
+model User {
+  id           Int            @id @default(autoincrement())
+  email        String         @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime       @default(now())
+  reviews      Review[]
+  savedColleges SavedCollege[]
+}
+
+model SavedCollege {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  collegeId Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  college   College  @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, collegeId])
+  @@index([userId])
+}
