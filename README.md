@@ -1,98 +1,115 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# College Discovery API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A production-grade REST API for college search, comparison, and admission prediction. Built for the AI Software Engineer Internship — Track B (Backend Engineer).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Tech Stack
 
-## Description
+- **Framework**: NestJS (TypeScript)
+- **Database**: PostgreSQL
+- **ORM**: Prisma v5
+- **Auth**: JWT (passport-jwt)
+- **Validation**: class-validator + class-transformer
+- **Docs**: Swagger/OpenAPI (auto-generated)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Architecture Decisions
 
-## Project setup
+### Why NestJS over Next.js API Routes
+NestJS provides module isolation, dependency injection, decorators-based routing, and global middleware — all production patterns that Next.js API routes don't offer natively.
 
-```bash
-$ npm install
+### Cursor-based Pagination (not offset)
+Offset pagination breaks when rows are inserted/deleted mid-query. Cursor-based pagination (by `id`) is stable and performant at scale.
+
+### PostgreSQL Full-Text Search
+Uses a `tsvector` column generated from `name`, `city`, `state`, and `description` with GIN index for fast ranked search — not naive `LIKE '%query%'` which can't use indexes.
+
+### Consistent Response Envelope
+Every response wraps data in `{ success, data, timestamp }`. Every error wraps in `{ success: false, statusCode, error, timestamp, path }`. Frontend never needs to guess the shape.
+
+### Comparison Matrix
+The compare endpoint doesn't just return raw data — it computes a `comparisonMatrix` array that highlights which college wins on each metric (`isBest: true`), saving the frontend from doing this logic.
+
+### Admission Chance Algorithm
+The predictor classifies colleges into `HIGH / MEDIUM / LOW / REACH` based on where the user's rank falls within the `openingRank → closingRank` range:
+- `> 50%` of range remaining → HIGH
+- `20–50%` remaining → MEDIUM
+- `0–20%` remaining → LOW
+- Beyond closing rank → REACH
+
+## API Endpoints
+
+```
+POST /api/v1/auth/register       Register new user
+POST /api/v1/auth/login          Login, returns JWT
+
+GET  /api/v1/colleges            List colleges (search + filter + cursor pagination)
+GET  /api/v1/colleges/filters    Get distinct states, cities, types for filter UI
+GET  /api/v1/colleges/:slug      Full college detail (courses, placements, reviews)
+
+GET  /api/v1/compare?ids=1,2,3   Side-by-side comparison + matrix
+GET  /api/v1/predictor           Rank-based college admission prediction
 ```
 
-## Compile and run the project
+### Query Params — `/api/v1/colleges`
+| Param | Type | Description |
+|---|---|---|
+| `q` | string | Full-text search across name, city, state, description |
+| `type` | enum | IIT, NIT, IIIT, DEEMED, PRIVATE, GOVERNMENT, CENTRAL |
+| `state` | string | Filter by state |
+| `city` | string | Filter by city |
+| `minFees` | number | Minimum annual fees (₹) |
+| `maxFees` | number | Maximum annual fees (₹) |
+| `minRating` | number | Minimum rating (0–5) |
+| `sortBy` | enum | rating_desc, fees_asc, fees_desc, name_asc, established_desc |
+| `cursor` | number | Last college ID (cursor pagination) |
+| `limit` | number | Page size (default 20, max 100) |
 
-```bash
-# development
-$ npm run start
+### Query Params — `/api/v1/predictor`
+| Param | Type | Description |
+|---|---|---|
+| `exam` | enum | JEE_MAIN, JEE_ADVANCED, NEET, CAT, GATE, XAT, CLAT |
+| `rank` | number | Your rank |
+| `category` | enum | GENERAL, OBC, SC, ST, EWS (default GENERAL) |
+| `limit` | number | Max results (default 20) |
 
-# watch mode
-$ npm run start:dev
+## Database Schema
 
-# production mode
-$ npm run start:prod
+```
+College     ← has many → Course, Placement, Review, ExamCutoff, SavedCollege
+User        ← has many → Review, SavedCollege
 ```
 
-## Run tests
+Indexes on: `type`, `state`, `totalRating`, `minFees`, `(exam, category, closingRank)`, `searchVector` (GIN).
+
+## Local Setup
 
 ```bash
-# unit tests
-$ npm run test
+# 1. Install dependencies
+npm install
 
-# e2e tests
-$ npm run test:e2e
+# 2. Set up .env
+cp .env.example .env
+# Edit DATABASE_URL to point to your PostgreSQL instance
 
-# test coverage
-$ npm run test:cov
+# 3. Run migrations
+npx prisma migrate dev
+
+# 4. Seed data
+npm run db:seed
+
+# 5. Start server
+npm run start:dev
+
+# Swagger docs at http://localhost:3000/docs
 ```
+
+## Swagger Docs
+
+Interactive API docs available at `/docs` when the server is running.
 
 ## Deployment
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Deploy to Railway or Render:
+1. Set `DATABASE_URL` environment variable (Neon PostgreSQL recommended)
+2. Set `JWT_SECRET`
+3. Build command: `npm run build`
+4. Start command: `npm run start:prod`
